@@ -1,0 +1,6 @@
+{
+  "name": "Grand Resonance",
+  "description": "南阳汉画像石数字艺术实验室",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}

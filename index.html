@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>南阳汉画像石 - 数字艺术实验室 (Grand Resonance)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Post-processing scripts -->
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/shaders/CopyShader.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap');
+        body { 
+            margin: 0; 
+            background: #0a0a0b; 
+            color: #e0e0e0; 
+            font-family: 'Inter', sans-serif; 
+            overflow: hidden; 
+            touch-action: none;
+        }
+        canvas { display: block; }
+        .han-font { font-family: 'Ma Shan Zheng', cursive; }
+        
+        .glass-panel {
+            background: #0d0d0f;
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.95);
+        }
+        
+        .han-border { border-left: 4px solid rgba(255,255,255,0.1); }
+        
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 3px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { height: 16px; width: 16px; border-radius: 50%; background: #ffffff; cursor: pointer; -webkit-appearance: none; margin-top: -6px; box-shadow: 0 0 12px rgba(255, 255, 255, 0.3); }
+        
+        .model-card { transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1); cursor: pointer; border-left: 2px solid transparent; position: relative; }
+        .model-card:hover { background: rgba(255, 255, 255, 0.05); border-left-color: rgba(255, 255, 255, 0.2); }
+        .model-card.active { background: rgba(255, 255, 255, 0.1); border-left-color: #ffffff; padding-left: 1.2rem; }
+        
+        .info-btn {
+            position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+            width: 24px; height: 24px; border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; color: #e0e0e0; background: rgba(0,0,0,0.4);
+            transition: all 0.3s; z-index: 10;
+        }
+        .info-btn:hover { background: #ffffff; color: white; box-shadow: 0 0 10px rgba(255, 255, 255, 0.2); }
+
+        /* 修复：将 left 从 20px 移至左侧面板右侧（256px宽 + 32px边距 + 20px间隔 = 308px） */
+        #video-container { 
+            position: fixed; bottom: 20px; left: 308px; width: 140px; height: 105px; 
+            border-radius: 12px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.05); 
+            transform: scaleX(-1); opacity: 0.8; z-index: 100; transition: opacity 0.5s; 
+            pointer-events: none;
+        }
+        
+        .side-panel { transition: transform 0.8s cubic-bezier(0.19, 1, 0.22, 1); }
+        .left-collapsed { transform: translateX(-92%); }
+        .right-collapsed { transform: translateX(92%); }
+
+        .toggle-tab {
+            position: absolute; top: 20px; width: 32px; height: 60px;
+            background: #0d0d0f; backdrop-filter: blur(10px);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.3s; border: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 10px; color: #e0e0e0;
+        }
+        .toggle-tab:hover { background: rgba(255, 255, 255, 0.1); color: white; }
+        .left-tab { right: -32px; border-radius: 0 8px 8px 0; }
+        .right-tab { left: -32px; border-radius: 8px 0 0 8px; }
+
+        #info-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000; backdrop-filter: blur(12px);
+        }
+        .modal-content {
+            width: 90%; max-width: 900px; max-height: 85vh; overflow-y: auto;
+            position: relative; animation: modalFade 0.5s ease-out;
+        }
+        @keyframes modalFade { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        
+        .audio-pulse {
+            animation: audioGlow 2.5s infinite alternate;
+        }
+        @keyframes audioGlow {
+            from { box-shadow: 0 0 5px rgba(255,255,255,0.05); border-color: rgba(255, 255, 255, 0.1); }
+            to { box-shadow: 0 0 20px rgba(255,255,255,0.1); border-color: rgba(255, 255, 255, 0.2); }
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+    <!-- AI 全局加载蒙层 -->
+    <div id="ai-loading-overlay" class="fixed inset-0 bg-black/85 z-[2000] hidden flex flex-col items-center justify-center backdrop-blur-md">
+        <div class="flex flex-col items-center gap-6">
+            <div class="w-16 h-16 border-4 border-white/10 border-t-white rounded-full animate-spin"></div>
+            <p id="ai-loading-text" class="han-font text-2xl text-gray-300 tracking-widest animate-pulse">正在唤醒时空祭司...</p>
+            <p class="text-[10px] text-gray-500 tracking-widest uppercase">Gemini & Imagen Cognitive Reconstitution</p>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="fixed top-0 left-0 w-full p-8 flex justify-between items-start z-50 pointer-events-none">
+        <div class="pointer-events-auto">
+            <h1 class="han-font text-6xl text-white tracking-[0.2em] mb-1 drop-shadow-2xl">南阳汉画像石</h1>
+            <p class="text-[10px] tracking-[0.6em] text-gray-500 uppercase font-bold">Divine Grand Soundscape Lab</p>
+        </div>
+        <div class="flex flex-col items-end gap-3 pointer-events-auto">
+            <button id="btn-audio-init" class="audio-pulse glass-panel px-6 py-2 rounded-xl text-xs text-white font-bold tracking-widest uppercase border border-white/10 transition-all hover:bg-white/5" onclick="initAudioSystem()">
+                🎵 开启磅礴古韵与交互音效
+            </button>
+            <div class="glass-panel p-4 rounded-2xl text-right border-white/10">
+                <p class="text-[8px] text-gray-600 mb-1 uppercase font-bold tracking-widest">声像场状态</p>
+                <p class="text-xs text-gray-400 font-mono italic" id="system-status">初始化感应中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="info-modal" onclick="closeModal()">
+        <div class="modal-content glass-panel p-10 rounded-[2rem] border-2 border-white/5 flex flex-col md:flex-row gap-10" onclick="event.stopPropagation()">
+            <button class="absolute top-6 right-8 text-3xl text-gray-600 hover:text-blue-500 transition-colors" onclick="closeModal()">×</button>
+            <div class="w-full md:w-1/2 group">
+                <div class="relative overflow-hidden rounded-2xl border border-white/5">
+                    <img id="modal-img" src="" class="w-full shadow-2xl transition-transform duration-700 group-hover:scale-110" alt="拓片展示">
+                    <div class="absolute inset-0 bg-gradient-to-t from-[#0a0a0b] to-transparent opacity-60"></div>
+                </div>
+            </div>
+            <div class="w-full md:w-1/2 flex flex-col justify-center">
+                <h2 id="modal-title" class="han-font text-5xl text-white mb-6 tracking-widest">藏品名称</h2>
+                <p id="modal-desc" class="text-sm text-gray-300 leading-loose tracking-wide">载入中...</p>
+                
+                <!-- Modal Detail AI Expansion -->
+                <div class="mt-4 p-4 rounded-xl bg-white/5 border border-white/5 hidden" id="modal-ai-expansion-box">
+                    <p class="text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <span>✨ AI 释魂诗赋</span>
+                    </p>
+                    <p id="modal-ai-text" class="text-xs italic text-gray-300 leading-relaxed"></p>
+                </div>
+                
+                <div class="mt-6 flex gap-4">
+                    <button id="btn-modal-ai" class="flex-1 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs text-white font-bold tracking-widest transition-all" onclick="explainRelicWithAI()">
+                        ✨ AI 深度解密
+                    </button>
+                </div>
+                
+                <div class="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
+                    <div class="flex flex-col">
+                        <span class="text-[9px] uppercase font-bold text-gray-500">断代</span>
+                        <span class="text-xs text-gray-400">东汉</span>
+                    </div>
+                    <div class="flex flex-col text-right">
+                        <span class="text-[9px] uppercase font-bold text-gray-500">出土地</span>
+                        <span class="text-xs text-gray-400">南阳</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 左侧面板 -->
+    <div id="left-panel" class="side-panel fixed top-32 left-8 w-64 z-50 h-[80vh]">
+        <div class="toggle-tab left-tab" onclick="togglePanel('left')">
+            <span id="left-icon">◀</span>
+        </div>
+        <div class="h-full overflow-y-auto pr-1 custom-scrollbar">
+            <div class="glass-panel p-6 rounded-3xl han-border space-y-6">
+            <div>
+                <h3 class="text-white text-[10px] font-black mb-4 uppercase tracking-[0.3em] flex items-center gap-3">
+                    <span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> 物质属性调节
+                </h3>
+                <div class="space-y-5">
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-2 uppercase font-bold tracking-tighter"><span>粒子光点尺寸</span><span id="v-size">0.35</span></div>
+                        <input type="range" id="s-size" min="0.1" max="1.2" step="0.05" value="0.35">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-2 uppercase font-bold tracking-tighter"><span>重构空间规模</span><span id="v-scale">12</span></div>
+                        <input type="range" id="s-scale" min="6" max="22" step="1" value="12">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-2 uppercase font-bold tracking-tighter"><span>灵性吸附速度</span><span id="v-snap">0.08</span></div>
+                        <input type="range" id="s-snap" min="0.02" max="0.15" step="0.01" value="0.08">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-2 uppercase font-bold tracking-tighter"><span>时空乱度抖动</span><span id="v-jitter">0.15</span></div>
+                        <input type="range" id="s-jitter" min="0" max="0.4" step="0.01" value="0.15">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-2 uppercase font-bold tracking-tighter"><span>粒子渲染数量</span><span id="v-count">60000</span></div>
+                        <input type="range" id="s-count" min="10000" max="100000" step="2000" value="60000">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 色彩定制模块 -->
+            <div class="pt-5 border-t border-white/5">
+                <h3 class="text-white text-[10px] font-black mb-4 uppercase tracking-[0.3em] flex items-center gap-3">
+                    🎨 古砖色彩重构
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider">石砖底色</span>
+                        <input type="color" id="cp-bg" value="#0a0a0b" class="w-12 h-6 rounded border border-white/10 cursor-pointer bg-transparent outline-none">
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider">人物轮廓</span>
+                        <input type="color" id="cp-fg" value="#3b82f6" class="w-12 h-6 rounded border border-white/10 cursor-pointer bg-transparent outline-none">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ✨ AI 时空祭司与工坊 -->
+            <div class="pt-5 border-t border-white/5 space-y-4">
+                <h3 class="text-white text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3">
+                    ✨ AI 时空祭司
+                </h3>
+                
+                <div class="space-y-2">
+                    <textarea id="ai-query-input" placeholder="向祭司提问画像砖里的神仙瑞兽..." class="w-full h-16 p-2 rounded-xl bg-black/40 border border-white/10 text-[11px] text-gray-300 placeholder-gray-600 outline-none resize-none custom-scrollbar"></textarea>
+                    
+                    <button class="w-full py-2 bg-white/10 hover:bg-white/5 border border-white/10 rounded-xl text-[10px] text-white font-bold tracking-widest uppercase transition-all" onclick="askAiPriest()">
+                        ✨ 叩问远古历史
+                    </button>
+                </div>
+
+                <!-- AI 对话回显 -->
+                <div id="ai-response-box" class="hidden p-3 rounded-xl bg-white/5 border border-white/10 text-[10px] text-gray-300 leading-relaxed max-h-32 overflow-y-auto custom-scrollbar"></div>
+
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- 右侧面板 -->
+    <div id="right-panel" class="side-panel fixed top-32 right-8 w-72 z-50">
+        <div class="toggle-tab right-tab" onclick="togglePanel('right')">
+            <span id="right-icon">▶</span>
+        </div>
+        <div class="glass-panel p-6 rounded-3xl border-r-4 border-white/5">
+            <h3 class="text-white text-[10px] font-black mb-6 flex justify-between items-center uppercase tracking-widest">
+                馆藏 · 画像珍选
+            </h3>
+            <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-3 custom-scrollbar" id="model-list">
+                <!-- JS Rendered -->
+            </div>
+            <div class="mt-8 pt-6 border-t border-white/5">
+                <p class="text-[9px] text-gray-500 uppercase leading-tight font-bold" id="interaction-hint">感应模式加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="video-container" class="relative">
+        <video id="input-video" class="w-full h-full object-cover" autoplay playsinline></video>
+        <canvas id="output-canvas" class="absolute inset-0 w-full h-full object-cover pointer-events-none" width="640" height="480"></canvas>
+    </div>
+
+    <!-- Shader Scripts -->
+    <script type="x-shader/x-vertex" id="vertexShader">
+        attribute vec3 chaos;
+        attribute vec3 target;
+        attribute vec3 color;
+        uniform float uProgress;
+        uniform float uExplosion;
+        uniform float uScale;
+        uniform float uSize;
+        uniform float uTime;
+        uniform float uJitter;
+        uniform float uAudio;
+        uniform vec3 uBgColor;
+        uniform vec3 uFgColor;
+        varying vec3 vColor;
+        varying float vGlow;
+
+        void main() {
+            vec3 mixedColor = mix(uBgColor, uFgColor, color.r);
+            vColor = mixedColor;
+            
+            vec3 basePos = target * uScale;
+            
+            float pulse = uAudio * 2.2;
+            basePos.xyz += normalize(target.xyz + 0.001) * pulse * (1.0 + sin(uTime * 3.0));
+            
+            basePos.x += sin(uTime * 1.5 + target.y * 2.0) * uJitter;
+            basePos.y += cos(uTime * 1.5 + target.x * 2.0) * uJitter;
+            
+            vec3 pos = mix(basePos, chaos, uExplosion);
+            pos = mix(chaos, pos, uProgress);
+            
+            vGlow = uExplosion * 0.35 + 0.1 + (uAudio * 0.5);
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_PointSize = uSize * (450.0 / max(-mvPosition.z, 0.5));
+            gl_Position = projectionMatrix * mvPosition;
+        }
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader">
+        varying vec3 vColor;
+        varying float vGlow;
+        void main() {
+            float dist = distance(gl_PointCoord, vec2(0.5));
+            if(dist > 0.5) discard;
+            float alpha = smoothstep(0.5, 0.2, dist);
+            vec3 finalColor = vColor + vec3(0.25, 0.1, 0.02) * vGlow;
+            gl_FragColor = vec4(finalColor, alpha);
+        }
+    </script>
+
+    <script type="module">
+        const MAX_PARTICLES = 100000;
+        let PARTICLE_COUNT = 60000;
+        let scene, camera, renderer, composer, particles;
+        let isProcessingFrame = false;
+        let lastExplosionState = 0;
+        let isCameraActive = false;
+        let activeModelIndex = 0;
+        
+        const config = {
+            size: 0.35, scale: 12.0, snapSpeed: 0.08, jitter: 0.15, explosion: 0.0,
+            targetRotationY: 0, targetRotationX: 0
+        };
+
+        // --- 磅礴古风音频合成引擎 ---
+        class GrandAncientSoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.analyser = null;
+                this.mainGain = null;
+                this.scale = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63];
+                this.melodyTimer = null;
+                this.droneOscillators = [];
+            }
+            async init() {
+                if(!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    this.analyser = this.ctx.createAnalyser();
+                    this.analyser.fftSize = 64;
+                    this.mainGain = this.ctx.createGain();
+                    this.mainGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                    this.mainGain.connect(this.analyser).connect(this.ctx.destination);
+                    
+                    this.startGrandDrone();
+                    this.startGrandMelody();
+                }
+                if(this.ctx.state === 'suspended') await this.ctx.resume();
+            }
+            startGrandDrone() {
+                const frequencies = [65.41, 98.00, 130.81];
+                frequencies.forEach(f => {
+                    const osc = this.ctx.createOscillator();
+                    const g = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(f, this.ctx.currentTime);
+                    
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(200, this.ctx.currentTime);
+                    
+                    g.gain.setValueAtTime(0.08, this.ctx.currentTime);
+                    
+                    osc.connect(filter).connect(g).connect(this.mainGain);
+                    osc.start();
+                    this.droneOscillators.push(osc);
+                });
+            }
+            startGrandMelody() {
+                this.melodyTimer = setInterval(() => {
+                    if(this.ctx && this.ctx.state !== 'suspended') {
+                        if(Math.random() > 0.4) this.playGrandNote();
+                        if(Date.now() % 3200 < 900) this.playGrandDrum();
+                    }
+                }, 800);
+            }
+            playGrandNote() {
+                const freq = this.scale[Math.floor(Math.random() * this.scale.length)];
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                
+                g.gain.setValueAtTime(0, this.ctx.currentTime);
+                g.gain.linearRampToValueAtTime(0.15, this.ctx.currentTime + 0.1);
+                g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 2.5);
+                
+                osc.connect(g).connect(this.mainGain);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 2.6);
+            }
+            playGrandDrum() {
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.frequency.setValueAtTime(80, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                
+                g.gain.setValueAtTime(0.6, this.ctx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.5);
+                
+                osc.connect(g).connect(this.mainGain);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+            playExplosionWind() {
+                if(!this.ctx || this.ctx.state === 'suspended') return;
+                const bufferSize = this.ctx.sampleRate * 1.5;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+                const src = this.ctx.createBufferSource(); src.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter(); 
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(2000, this.ctx.currentTime);
+                filter.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 1.2);
+
+                const g = this.ctx.createGain();
+                g.gain.setValueAtTime(0, this.ctx.currentTime);
+                g.gain.linearRampToValueAtTime(0.4, this.ctx.currentTime + 0.2);
+                g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.5);
+
+                src.connect(filter).connect(g).connect(this.ctx.destination);
+                src.start();
+            }
+            playGatherHum() {
+                if(!this.ctx || this.ctx.state === 'suspended') return;
+                const osc = this.ctx.createOscillator();
+                const osc2 = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                
+                osc.type = 'sine'; osc2.type = 'sine';
+                osc.frequency.setValueAtTime(55, this.ctx.currentTime);
+                osc2.frequency.setValueAtTime(55.5, this.ctx.currentTime);
+                
+                g.gain.setValueAtTime(0, this.ctx.currentTime);
+                g.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + 0.2);
+                g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.8);
+
+                osc.connect(g); osc2.connect(g);
+                g.connect(this.ctx.destination);
+                
+                osc.start(); osc2.start();
+                osc.stop(this.ctx.currentTime + 0.8); osc2.stop(this.ctx.currentTime + 0.8);
+            }
+            getVolumeEnergy() {
+                if(!this.analyser) return 0;
+                const arr = new Uint8Array(this.analyser.frequencyBinCount);
+                this.analyser.getByteFrequencyData(arr);
+                let sum = 0; for(let i=0; i<arr.length; i++) sum += arr[i];
+                return (sum / arr.length) / 255;
+            }
+        }
+
+        const soundEngine = new GrandAncientSoundEngine();
+
+        async function initAudioSystem() {
+            await soundEngine.init();
+            const btn = document.getElementById('btn-audio-init');
+            btn.textContent = "🔊 磅礴古韵已共鸣";
+            btn.classList.remove('audio-pulse');
+            btn.style.color = '#ffffff';
+            btn.style.borderColor = '#ffffff';
+        }
+
+        const models = [
+            { name: "弄壶 · 长袖舞", url: "https://i.postimg.cc/431KmY70/4-nong-hu-zhang-xiu-wu.jpg", desc: "舞者甩动极长的袖管，线条流畅如水，脚底壶器点缀。展现了汉代舞蹈那份凌空欲飞的生命张力。汉代追求“飞仙”之境，长袖飞舞间，仿佛能羽化登仙。此石刻不仅是一场视觉盛宴，更是当时人们渴望超越凡尘、追求长生与自由的精神写照。" },
+            { name: "踏鼓舞蹈", url: "https://i.postimg.cc/ZqL9CWBG/7-ta-gu-wu.jpg", desc: "著名的盘鼓舞。舞者在鼓面上腾跃，动作迅捷而富有节奏。鼓以七盘为多，寓意北斗七星。舞者轻盈的身姿与沉稳的鼓点形成强烈反差，体现了阴阳相济的哲学思想，是汉代百戏中难度极高且最具观赏性的节目。" },
+            { name: "鼓乐图", url: "https://i.postimg.cc/zfkLVybc/3-gu-le.jpg", desc: "庄严的礼乐场面。乐官们执槌击打建鼓，四周伴以排箫和琴鸣。钟鼓之乐，在汉代多用于祭祀神明、宗庙，或作为宴饮的最高礼遇。这幅画像生动重现了“钟鼓齐鸣”的恢弘气象，是研究汉代音乐史与礼乐制度的珍贵图像史料。" },
+            { name: "投壶游戏", url: "https://i.postimg.cc/GhxMQQDw/14tou-hu.jpg", desc: "汉代上层社会的竞技游戏。图中精准捕捉了箭矢入壶的瞬间。投壶源自西周的射礼，至汉代演变为宴会时常见的娱乐活动。它既是游戏，也蕴含着儒家“君子无所争，必也射乎”的礼制精神，讲究心平气和、从容不迫。" },
+            { name: "弋射狩猎", url: "https://i.postimg.cc/VksKHCqV/21-che-qi-chu-xing.jpg", desc: "车马出行与弋射场景。车舆疾驰，猎者张弓，飞鸟惊散。弋射是汉代贵族喜爱的田猎活动，常以生丝系在箭尾，以便射中猎物后牵回。画面动感十足，充满着人与自然互动时的原始野性与张力，也反映了汉代勇武尚气的时代精神。" },
+            { name: "六博", url: "https://i.postimg.cc/jdL9DVFD/liu-bo.jpg", desc: "此画像石刻画了两人相对而坐，在案上进行六博游戏的场景。六博是汉代极为流行的博戏，神仙传说中也常有出现，如“仙人六博”。画面再现了汉代人的娱乐生活与博戏风貌，同时六博在当时往往与占卜、升仙观念相连，充满了神秘的宇宙论色彩。" }
+        ];
+
+        // --- Gemini API 集成逻辑 ---
+        import { GoogleGenAI } from "@google/genai";
+        
+        // Please note: API key is automatically injected by Vite via process.env.GEMINI_API_KEY
+        // AI Studio automatically handles the internal token when using the official SDK.
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
+        async function callGeminiText(prompt, systemInstruction = "") {
+            let delay = 1000;
+            for (let i = 0; i < 5; i++) {
+                try {
+                    const config = {};
+                    if (systemInstruction) config.systemInstruction = systemInstruction;
+                    const response = await ai.models.generateContent({
+                        model: "gemini-2.5-flash",
+                        contents: prompt,
+                        config
+                    });
+                    if (!response?.text) {
+                        throw new Error("No text returned from Gemini API");
+                    }
+                    return response.text;
+                } catch (error) {
+                    if (i === 4) {
+                        console.error("Gemini Text error:", error);
+                        const errString = String(error);
+                        if (errString.includes("403")) {
+                            throw new Error("API Key 权限被拒绝 (403)。如果在用免费额度，请重新申请或检查配置。");
+                        }
+                        if (errString.includes("429")) {
+                            throw new Error("请求太频繁或免费配额耗尽 (429)。请稍后再试。");
+                        }
+                        throw error;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        // 叩问时空祭司
+        async function askAiPriest() {
+            const queryVal = document.getElementById('ai-query-input').value.trim();
+            if (!queryVal) return;
+
+            const resBox = document.getElementById('ai-response-box');
+            resBox.classList.remove('hidden');
+            resBox.innerHTML = "<p class='animate-pulse text-gray-300'>时空微粒交织，古魂正在聆听您的叩问...</p>";
+
+            const systemPrompt = "你是一位精通东汉历史与南阳汉画像石的“时空祭司”。你说话文雅庄重、博古通今。请用磅礴大气的语气解答关于画像石、汉代礼乐、神仙世界或世俗生活的叩问。限制在150字以内。";
+            
+            try {
+                const answer = await callGeminiText(queryVal, systemPrompt);
+                resBox.innerHTML = `<p class='text-white font-bold mb-1'>祭司断曰：</p><p>${answer}</p>`;
+            } catch (err) {
+                const errorStr = String(err);
+                if (errorStr.includes('403') || errorStr.includes('429')) {
+                    resBox.innerHTML = `<p class='text-red-400'>天机受阻：${err.message}</p>`;
+                } else {
+                    resBox.innerHTML = "<p class='text-gray-400'>天机受阻，无法连通古汉时空。请稍后再试。</p>";
+                }
+            }
+        }
+
+        // 解释画像石深层含义（弹窗内）
+        async function explainRelicWithAI() {
+            const m = models[activeModelIndex];
+            const expBox = document.getElementById('modal-ai-expansion-box');
+            const expText = document.getElementById('modal-ai-text');
+            
+            expBox.classList.remove('hidden');
+            expText.innerHTML = "时空解密中，古灵吟诵其魂...";
+
+            const systemPrompt = "请根据提供的汉代画像石名 and 描述，创作一首四句七言的古风释魂诗赋，以此赞叹其风神，并做简短的一句话哲学解析。语言需极其高雅磅礴。";
+            const prompt = `画像石名称：《${m.name}》\n历史描述：${m.desc}`;
+
+            try {
+                const resultText = await callGeminiText(prompt, systemPrompt);
+                expText.innerHTML = resultText.replace(/\n/g, '<br>');
+            } catch(e) {
+                const errorStr = String(e);
+                if (errorStr.includes('403') || errorStr.includes('429')) {
+                    expText.innerHTML = `<span class="text-red-400">解密失败：${e.message}</span>`;
+                } else {
+                    expText.textContent = "古魂沉睡，暂无法解密。";
+                }
+            }
+        }
+
+        // --- 粒子加载与展示逻辑 ---
+
+        function renderList() {
+            const list = document.getElementById('model-list');
+            list.innerHTML = models.map((m, i) => `
+                <div class="model-card ${i === 0 ? 'active' : ''} p-4 rounded-2xl bg-white/5 border border-white/5" id="card-${i}" onclick="selectModel(${i}, this)">
+                    <h4 class="han-font text-xl text-gray-100">${m.name}</h4>
+                    <p class="text-[9px] text-gray-400 mt-1 uppercase tracking-widest font-bold">Divine Artifact Archive</p>
+                    <div class="info-btn" onclick="openModal(event, ${i})">鉴</div>
+                </div>
+            `).join('');
+        }
+
+        function togglePanel(side) {
+            const panel = document.getElementById(side + '-panel');
+            const icon = document.getElementById(side + '-icon');
+            if (side === 'left') {
+                const isCollapsed = panel.classList.toggle('left-collapsed');
+                icon.textContent = isCollapsed ? '▶' : '◀';
+            } else {
+                const isCollapsed = panel.classList.toggle('right-collapsed');
+                icon.textContent = isCollapsed ? '◀' : '▶';
+            }
+        }
+
+        function openModal(event, index) {
+            event.stopPropagation();
+            activeModelIndex = index;
+            const m = models[index];
+            document.getElementById('modal-img').src = m.url;
+            document.getElementById('modal-title').textContent = m.name;
+            document.getElementById('modal-desc').textContent = m.desc;
+            
+            // 重置 AI 展开框
+            document.getElementById('modal-ai-expansion-box').classList.add('hidden');
+            document.getElementById('modal-ai-text').textContent = '';
+
+            document.getElementById('info-modal').style.display = 'flex';
+        }
+
+        function closeModal() { document.getElementById('info-modal').style.display = 'none'; }
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x0a0202, 0.015);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 25;
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+            const renderScene = new THREE.RenderPass(scene, camera);
+            const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.35, 0.5, 0.6);
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+            const ambientLight = new THREE.AmbientLight(0x3d0a0a, 2.5);
+            scene.add(ambientLight);
+            const geo = new THREE.BufferGeometry();
+            const posArray = new Float32Array(MAX_PARTICLES * 3);
+            const tgtArray = new Float32Array(MAX_PARTICLES * 3);
+            const chaosArray = new Float32Array(MAX_PARTICLES * 3);
+            const colArray = new Float32Array(MAX_PARTICLES * 3);
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                chaosArray[i * 3] = (Math.random() - 0.5) * 125;
+                chaosArray[i * 3 + 1] = (Math.random() - 0.5) * 95;
+                chaosArray[i * 3 + 2] = (Math.random() - 0.5) * 160 - 40;
+                posArray[i * 3] = chaosArray[i * 3];
+                posArray[i * 3 + 1] = chaosArray[i * 3 + 1];
+                posArray[i * 3 + 2] = chaosArray[i * 3 + 2];
+                colArray[i * 3] = 0.5; colArray[i * 3 + 1] = 0.5; colArray[i * 3 + 2] = 0.5;
+            }
+            geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            geo.setAttribute('target', new THREE.BufferAttribute(tgtArray, 3));
+            geo.setAttribute('chaos', new THREE.BufferAttribute(chaosArray, 3));
+            geo.setAttribute('color', new THREE.BufferAttribute(colArray, 3));
+            
+            geo.setDrawRange(0, PARTICLE_COUNT);
+
+            const mat = new THREE.ShaderMaterial({
+                uniforms: {
+                    uProgress: { value: 0.0 }, uExplosion: { value: 0.0 }, uScale: { value: config.scale },
+                    uSize: { value: config.size }, uJitter: { value: config.jitter }, uTime: { value: 0.0 }, uAudio: { value: 0.0 },
+                    uBgColor: { value: new THREE.Color('#0a0a0b') }, uFgColor: { value: new THREE.Color('#3b82f6') }
+                },
+                vertexShader: document.getElementById('vertexShader').textContent,
+                fragmentShader: document.getElementById('fragmentShader').textContent,
+                transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+            });
+            particles = new THREE.Points(geo, mat);
+            scene.add(particles);
+
+            const bind = (id, key, uniform) => {
+                const s = document.getElementById(id);
+                const v = document.getElementById('v-' + id.split('-')[1]);
+                s.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    config[key] = val; v.textContent = val;
+                    if(uniform) particles.material.uniforms[uniform].value = val;
+                });
+            };
+            bind('s-size', 'size', 'uSize'); bind('s-scale', 'scale', 'uScale');
+            bind('s-snap', 'snapSpeed'); bind('s-jitter', 'jitter', 'uJitter');
+
+            const sCount = document.getElementById('s-count');
+            const vCount = document.getElementById('v-count');
+            sCount.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                PARTICLE_COUNT = val;
+                vCount.textContent = val;
+                particles.geometry.setDrawRange(0, val);
+            });
+
+            const cpBg = document.getElementById('cp-bg');
+            cpBg.addEventListener('input', (e) => {
+                particles.material.uniforms.uBgColor.value.set(e.target.value);
+            });
+            const cpFg = document.getElementById('cp-fg');
+            cpFg.addEventListener('input', (e) => {
+                particles.material.uniforms.uFgColor.value.set(e.target.value);
+            });
+
+            let isDragging = false;
+            let lastX, lastY;
+            window.addEventListener('mousedown', (e) => {
+                // 如果点中UI面板，则不触发爆炸粒子
+                if(e.target.closest('#left-panel') || e.target.closest('#right-panel') || e.target.closest('#btn-audio-init') || e.target.closest('#info-modal') || e.target.closest('#ai-loading-overlay')) return;
+                isDragging = true; lastX = e.clientX; lastY = e.clientY;
+                if(!isCameraActive) {
+                    config.explosion = 1.0;
+                    if(lastExplosionState <= 0.45) soundEngine.playExplosionWind();
+                }
+            });
+            window.addEventListener('mousemove', (e) => {
+                if(isDragging && !isCameraActive) {
+                    config.targetRotationY += (e.clientX - lastX) * 0.01;
+                    config.targetRotationX += (e.clientY - lastY) * 0.01;
+                    lastX = e.clientX; lastY = e.clientY;
+                }
+            });
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+                if(!isCameraActive) {
+                    config.explosion = 0.0;
+                    if(lastExplosionState >= 0.15) soundEngine.playGatherHum();
+                }
+            });
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function loadArt(url) {
+            const img = new Image(); img.crossOrigin = "anonymous";
+            img.onload = () => {
+                const cvs = document.createElement('canvas'); const ctx = cvs.getContext('2d');
+                cvs.width = 120; cvs.height = 120; ctx.drawImage(img, 0, 0, 120, 120);
+                const data = ctx.getImageData(0, 0, 120, 120).data;
+                const tgt = particles.geometry.attributes.target.array;
+                const col = particles.geometry.attributes.color.array;
+                const aspect = img.width / img.height;
+                
+                for (let i = 0; i < MAX_PARTICLES; i++) {
+                    const idx = Math.floor(Math.random() * (120 * 120));
+                    tgt[i * 3] = ((idx % 120) / 120 - 0.5) * aspect;
+                    tgt[i * 3 + 1] = (0.5 - Math.floor(idx / 120) / 120);
+                    tgt[i * 3 + 2] = (data[idx * 4] / 255 - 0.5) * 0.5;
+                    
+                    const r = data[idx * 4] / 255;
+                    const g = data[idx * 4 + 1] / 255;
+                    const b = data[idx * 4 + 2] / 255;
+                    const intensity = (r * 0.299 + g * 0.587 + b * 0.114);
+                    
+                    col[i * 3] = intensity;
+                    col[i * 3 + 1] = intensity;
+                    col[i * 3 + 2] = intensity;
+                }
+                particles.geometry.attributes.target.needsUpdate = true;
+                particles.geometry.attributes.color.needsUpdate = true;
+                particles.material.uniforms.uProgress.value = 0;
+            };
+            img.src = url;
+        }
+
+        async function initMediaPipe() {
+            const statusEl = document.getElementById('system-status');
+            const hintEl = document.getElementById('interaction-hint');
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("No device");
+                const video = document.getElementById('input-video');
+                const canvasElement = document.getElementById('output-canvas');
+                const canvasCtx = canvasElement.getContext('2d');
+                
+                const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+                hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                hands.onResults((res) => {
+                    isProcessingFrame = false;
+                    
+                    canvasCtx.save();
+                    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                    if (res.multiHandLandmarks) {
+                        for (const landmarks of res.multiHandLandmarks) {
+                            if (window.drawConnectors && window.HAND_CONNECTIONS) {
+                                window.drawConnectors(canvasCtx, landmarks, window.HAND_CONNECTIONS, {color: 'rgba(255,255,255,0.5)', lineWidth: 2});
+                            }
+                            if (window.drawLandmarks) {
+                                window.drawLandmarks(canvasCtx, landmarks, {color: '#3b82f6', lineWidth: 1, radius: 2});
+                            }
+                        }
+                    }
+                    canvasCtx.restore();
+
+                    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                        isCameraActive = true;
+                        const lm = res.multiHandLandmarks[0];
+                        config.targetRotationY = (lm[0].x - 0.5) * 5.0;
+                        config.targetRotationX = (lm[0].y - 0.5) * 3.0;
+                        const d = Math.hypot(lm[4].x - lm[20].x, lm[4].y - lm[20].y);
+                        config.explosion = THREE.MathUtils.clamp((d - 0.16) / 0.38, 0, 1.0);
+                        if(config.explosion > 0.45 && lastExplosionState <= 0.45) soundEngine.playExplosionWind();
+                        else if(config.explosion < 0.15 && lastExplosionState >= 0.15) soundEngine.playGatherHum();
+                        lastExplosionState = config.explosion;
+                        statusEl.textContent = "磅礴声像共鸣中"; statusEl.style.color = '#ffffff';
+                    } else {
+                        statusEl.textContent = "搜寻远古回响..."; statusEl.style.color = "#666";
+                        config.explosion *= 0.85;
+                        if(config.explosion < 0.05 && lastExplosionState >= 0.15) { soundEngine.playGatherHum(); lastExplosionState = 0; }
+                    }
+                });
+                const cam = new Camera(video, {
+                    onFrame: async () => { if(!isProcessingFrame) { isProcessingFrame = true; await hands.send({image: video}); } },
+                    width: 640, height: 480
+                });
+                await cam.start();
+                isCameraActive = true; hintEl.textContent = "手势模式：已激活感应 (支持2只手)";
+            } catch(e) {
+                isCameraActive = false; statusEl.textContent = "感应器离线";
+                hintEl.textContent = "鼠标模式：点击炸开 / 拖动旋转";
+            }
+        }
+
+        function selectModel(idx, el) {
+            activeModelIndex = idx;
+            document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
+            el.classList.add('active'); loadArt(models[idx].url);
+        }
+
+        function onWindowResize() {
+            const w = window.innerWidth, h = window.innerHeight;
+            camera.aspect = w / h; camera.updateProjectionMatrix();
+            renderer.setSize(w, h); composer.setSize(w, h);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now() * 0.001;
+            particles.material.uniforms.uTime.value = time;
+            particles.material.uniforms.uAudio.value = soundEngine.getVolumeEnergy();
+            particles.material.uniforms.uProgress.value = THREE.MathUtils.lerp(particles.material.uniforms.uProgress.value, 1.0, config.snapSpeed);
+            particles.material.uniforms.uExplosion.value = THREE.MathUtils.lerp(particles.material.uniforms.uExplosion.value, config.explosion, 0.15);
+            particles.rotation.y = THREE.MathUtils.lerp(particles.rotation.y, config.targetRotationY, 0.05);
+            particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, config.targetRotationX, 0.05);
+            composer.render();
+            if(!isCameraActive) lastExplosionState = config.explosion;
+        }
+
+        window.initAudioSystem = initAudioSystem;
+        window.closeModal = closeModal;
+        window.openModal = openModal;
+        window.explainRelicWithAI = explainRelicWithAI;
+        window.askAiPriest = askAiPriest;
+        window.selectModel = selectModel;
+        window.togglePanel = togglePanel;
+
+        window.onload = () => { renderList(); initThree(); initMediaPipe(); loadArt(models[0].url); animate(); };
+    </script>
+</body>
+</html>
